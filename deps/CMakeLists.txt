@@ -18,7 +18,7 @@ ENDMACRO (_LSB_RELEASE)
 
 # Returns a simple string describing the current Linux distribution
 # compatibility. Possible return values currently include:
-# ubuntu14.04, ubuntu12.04, ubuntu10.04, centos5, centos6.
+# ubuntu14.04, ubuntu12.04, ubuntu10.04, centos5, centos6, debian7.
 MACRO (_DETERMINE_LINUX_DISTRO _distro)
   _LSB_RELEASE (id _id)
   _LSB_RELEASE (release _rel)
@@ -32,6 +32,10 @@ MACRO (_DETERMINE_LINUX_DISTRO _distro)
     ELSE (_rel VERSION_LESS 13)
       SET (_rel 14.04)
     ENDIF (_rel VERSION_LESS 13)
+  ELSEIF (_id STREQUAL "debian" OR _id STREQUAL "centos" )
+    # Just use the major version from the CentOS/Debian identifier - we don't
+    # need different builds for different minor versions.
+    STRING (REGEX MATCH "[0-9]+" _rel "${_rel}")
   ENDIF (_id STREQUAL "linuxmint")
   SET (${_distro} "${_id}${_rel}")
 ENDMACRO (_DETERMINE_LINUX_DISTRO)
@@ -49,10 +53,18 @@ MACRO (_DETERMINE_PLATFORM var)
     ELSEIF (_plat STREQUAL "Darwin")
       SET (_plat "macosx")
     ELSEIF (_plat STREQUAL "Linux")
-      _DETERMINE_LINUX_DISTRO (_plat)
+      FIND_PROGRAM(LSB_RELEASE lsb_release)
+      IF (LSB_RELEASE)
+        _DETERMINE_LINUX_DISTRO (_plat)
+      ELSE (LSB_RELEASE)
+        MESSAGE (WARNING "Can't determine Linux platform without lsb_release")
+        SET (_plat "unknown")
+      ENDIF (LSB_RELEASE)
+    ELSEIF (_plat STREQUAL "SunOS")
+      SET (_plat "sunos")
     ELSE (_plat STREQUAL "Windows")
-      MESSAGE (FATAL_ERROR "Sorry, don't recognize your system ${_plat}. "
-        "Please re-run CMake without CB_DOWNLOAD_DEPS.")
+      MESSAGE (WARNING "Sorry, don't recognize your system ${_plat}. ")
+      SET (_plat "unknown")
     ENDIF (_plat STREQUAL "Windows")
     MESSAGE (STATUS "Set platform to ${_plat} for dependency downloads")
     SET (CB_DOWNLOAD_DEPS_PLATFORM ${_plat} CACHE STRING
@@ -164,8 +176,13 @@ ENDFUNCTION (_DOWNLOAD_DEP)
 FUNCTION (DECLARE_DEP name)
   PARSE_ARGUMENTS (dep "PLATFORMS" "VERSION" "SKIP" ${ARGN})
 
-  # If this dependency has already been declared, skip it
-  SET (_prop_name "CB_DOWNLOADED_DEP_${name}")
+  # If this dependency(+version) has already been declared, skip it
+  if (dep_VERSION)
+    SET (_prop_name "CB_DOWNLOADED_DEP_${name}_${dep_VERSION}")
+  else (dep_VERSION)
+    SET (_prop_name "CB_DOWNLOADED_DEP_${name}")
+  endif(dep_VERSION)
+
   GET_PROPERTY (_declared GLOBAL PROPERTY ${_prop_name} SET)
   IF (_declared)
     MESSAGE (STATUS "Dependency ${name} already declared, skipping...")
@@ -207,11 +224,17 @@ FUNCTION (DECLARE_DEP name)
   SET (_explode_dir "${CMAKE_CURRENT_BINARY_DIR}/${name}.exploded")
   SET (_binary_dir "${CMAKE_CURRENT_BINARY_DIR}/${name}.binary")
 
-  # See if dependency is already downloaded. We assume the existence of the
-  # exploded dir is sufficient.
-  IF (IS_DIRECTORY "${_explode_dir}")
-    MESSAGE (STATUS "Dependency '${name}' already downloaded")
-  ELSE (IS_DIRECTORY "${_explode_dir}")
+  # See if dependency is already downloaded. We assume the existence of a
+  # VERSION file which matches the current version is sufficient.
+  IF (EXISTS "${_explode_dir}/VERSION.txt")
+    FILE (STRINGS "${_explode_dir}/VERSION.txt" EXPLODED_VERSION)
+  ELSE (EXISTS "${_explode_dir}/VERSION.txt")
+    SET (EXPLODED_VERSION "none")
+  ENDIF (EXISTS "${_explode_dir}/VERSION.txt")
+
+  IF (EXISTING_VERSION STREQUAL ${dep_VERSION})
+      MESSAGE (STATUS "Dependency '${name} (${dep_VERSION})' already downloaded")
+  ELSE (EXISTING_VERSION STREQUAL ${dep_VERSION})
     _DOWNLOAD_DEP (${name} ${dep_VERSION})
 
     # Explode tgz into build directory.
@@ -220,7 +243,8 @@ FUNCTION (DECLARE_DEP name)
     EXECUTE_PROCESS (COMMAND "${CMAKE_COMMAND}" -E 
       tar xf "${_CB_DOWNLOAD_CACHED_DEP}"
       WORKING_DIRECTORY "${_explode_dir}")
-  ENDIF (IS_DIRECTORY "${_explode_dir}")
+    FILE (WRITE ${_explode_dir}/VERSION.txt ${dep_VERSION})
+  ENDIF (EXISTING_VERSION STREQUAL ${dep_VERSION})
 
   # Always add the dep subdir; this will "re-install" the dep every time you
   # run CMake, which might be wasteful, but at least should be safe.
