@@ -6,5 +6,5 @@ DECLARE_DEP (openssl VERSION 1.0.1h PLATFORMS windows_msvc)
 DECLARE_DEP (python-snappy VERSION c97d633 PLATFORMS windows_msvc)
 DECLARE_DEP (snappy VERSION 1.1.1 PLATFORMS windows_msvc)
 DECLARE_DEP (v8 VERSION 3.23.6 PLATFORMS windows_msvc)
-DECLARE_DEP (erlang VERSION R16B03 PLATFORMS macosx windows_msvc)
-
+DECLARE_DEP (erlang VERSION R16B03-1-cb1 PLATFORMS windows_msvc)
+DECLARE_DEP (erlang VERSION 62b74b5-cb1 PLATFORMS centos6 centos7 debian7 macosx sunos suse11.2 ubuntu12.04 ubuntu14.04)
